@@ -64,7 +64,8 @@ autoplot(weekly_ts, weekly_sales) +
     y        = "Weekly Sales"
   ) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_cartesian(ylim = c(0, 60000))
 
 
 names(final_fc)
