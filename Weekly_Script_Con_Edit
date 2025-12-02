@@ -1,0 +1,143 @@
+#THE FOLLOWING WAS CREATED AS AN R-NOTEBOOK --------JUST FYI
+
+
+
+
+
+---
+title: "Final project R Code"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(fpp3)
+```
+
+
+
+reading weekly datasets
+```{r}
+
+target_week_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10112025_KW.txt", header = TRUE, sep = "\t")
+target_week_2_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10182025_KW.txt", header = TRUE, sep = "\t")
+target_week_2_2 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10182025_KW 2.txt", header = TRUE, sep = "\t")
+target_week_3_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10252025_KW.txt", header = TRUE, sep = "\t")
+target_week_3_2 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10252025_KW 2.txt", header = TRUE, sep = "\t")
+target_week_4_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11012025_KW.txt", header = TRUE, sep = "\t")
+target_week_4_2 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11012025_KW 2.txt", header = TRUE, sep = "\t")
+target_week_4_3 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11012025_KW 3.txt", header = TRUE, sep = "\t")
+target_week_5 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11082025_KW.txt", header = TRUE, sep = "\t")
+```
+
+
+concatenating weekly dataframes
+```{r}
+All_weeks <- rbind(
+  target_week_1, target_week_2_1, target_week_2_2, target_week_3_1, target_week_3_2,
+  target_week_4_1, target_week_4_2, target_week_4_3, target_week_5
+)
+```
+
+
+Collapse duplicates at (LOCATION_ID, TCIN, SALES_DATE)
+```{r}
+weekly_base <- All_weeks %>%
+  mutate(SALES_DATE = as.Date(SALES_DATE)) %>%
+  group_by(LOCATION_ID, TCIN, SALES_DATE) %>%
+  summarise(
+    total_sales = sum(SALE_AMOUNT, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+  
+```
+
+Weekly tsibble at the bottom level
+```{r}
+weekly_ts <- weekly_base %>%
+  as_tsibble(
+    key   = c(LOCATION_ID, TCIN),
+    index = SALES_DATE
+  )
+```
+
+
+Hierarchical aggregation: Total -> Location -> (Location, TCIN)
+```{r}
+weekly_hts <- weekly_ts %>%
+  aggregate_key(
+    LOCATION_ID / TCIN,
+    total_sales = sum(total_sales, na.rm = TRUE)
+  )
+```
+
+
+Top-level series for plotting / storytelling
+```{r}
+weekly_top <- weekly_hts %>%
+  filter(is_aggregated(LOCATION_ID), is_aggregated(TCIN))
+
+autoplot(weekly_top, total_sales) +
+  geom_point(size = 2) +
+  labs(
+    title    = "Weekly Total Sales for Target Ice Cream Sandwiches",
+    subtitle = "Aggregated across all locations and products",
+    x        = "Week Ending Date",
+    y        = "Weekly Sales"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+Fit weekly models for the entire hierarchy
+```{r}
+# Fit models on top-level weekly total sales
+fit_top <- weekly_top %>%
+  model(
+    ARIMA    = ARIMA(total_sales),
+    ETS      = ETS(total_sales),
+    TSLM     = TSLM(total_sales ~ trend()),
+    Ensemble = (ARIMA(total_sales) +
+                  ETS(total_sales) +
+                  TSLM(total_sales ~ trend())) / 3
+  )
+report(fit_top %>% select(ARIMA))
+report(fit_top %>% select(ETS))
+report(fit_top %>% select(TSLM))
+
+```
+
+
+Rolling-origin cross-validation on top-level weekly series
+```{r}
+cv_top <- weekly_top %>%
+  stretch_tsibble(.init = 3, .step = 1) %>%   # first 3 weeks as initial window
+  model(
+    ARIMA    = ARIMA(total_sales),
+    ETS      = ETS(total_sales),
+    TSLM     = TSLM(total_sales ~ trend()),
+    Ensemble = (ARIMA(total_sales) +
+                  ETS(total_sales) +
+                  TSLM(total_sales ~ trend())) / 3
+  ) %>%
+  forecast(h = 1)                             # always forecast 1 week ahead
+
+```
+
+
+Compute CV accuracy metrics
+```{r}
+cv_results <- cv_top %>%
+  accuracy(weekly_top) %>%
+  group_by(.model) %>%
+  summarise(
+    RMSE = mean(RMSE, na.rm = TRUE),
+    MAPE = mean(MAPE, na.rm = TRUE)
+  )
+
+cv_results
