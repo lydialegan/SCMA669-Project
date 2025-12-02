@@ -130,6 +130,7 @@ cv_top <- weekly_top %>%
 ```
 
 
+
 Compute CV accuracy metrics
 ```{r}
 cv_results <- cv_top %>%
@@ -141,3 +142,40 @@ cv_results <- cv_top %>%
   )
 
 cv_results
+```
+
+
+Corrected fit_top
+```{r}
+fit_top <- weekly_top %>%
+  model(
+    ARIMA = ARIMA(total_sales),
+    TSLM  = TSLM(total_sales ~ trend()),
+    Ensemble = (ARIMA(total_sales) +
+                  TSLM(total_sales ~ trend())) / 2
+  )
+
+```
+
+
+
+Final operational weekly forecast (next 4 weeks)
+```{r}
+fc_top <- fit_top %>%
+  forecast(h = 4)
+```
+
+
+Plot the operational forecast
+```{r}
+autoplot(weekly_top, total_sales) +
+  autolayer(fc_top, level = NULL) +
+  labs(
+    title    = "Operational Weekly Forecast for Ice Cream Sandwich Sales",
+    subtitle = "Using ARIMA, TSLM, and Ensemble models",
+    x        = "Week Ending Date",
+    y        = "Weekly Sales"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
