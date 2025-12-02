@@ -33,6 +33,9 @@ target_week_4_3 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_1576
 target_week_5 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11082025_KW.txt", header = TRUE, sep = "\t")
 ```
 
+```{r}
+View(target_week)
+```
 
 concatenating weekly dataframes
 ```{r}
@@ -49,7 +52,7 @@ weekly_base <- All_weeks %>%
   mutate(SALES_DATE = as.Date(SALES_DATE)) %>%
   group_by(LOCATION_ID, TCIN, SALES_DATE) %>%
   summarise(
-    total_sales = sum(SALE_AMOUNT, na.rm = TRUE),
+    total_qty = sum(SALE_QUANTITY, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -71,7 +74,7 @@ Hierarchical aggregation: Total -> Location -> (Location, TCIN)
 weekly_hts <- weekly_ts %>%
   aggregate_key(
     LOCATION_ID / TCIN,
-    total_sales = sum(total_sales, na.rm = TRUE)
+    total_qty = sum(total_qty, na.rm = TRUE)
   )
 ```
 
@@ -81,13 +84,13 @@ Top-level series for plotting / storytelling
 weekly_top <- weekly_hts %>%
   filter(is_aggregated(LOCATION_ID), is_aggregated(TCIN))
 
-autoplot(weekly_top, total_sales) +
+autoplot(weekly_top, total_qty) +
   geom_point(size = 2) +
   labs(
-    title    = "Weekly Total Sales for Target Ice Cream Sandwiches",
+    title    = "Weekly Total Quantity for Target Ice Cream Sandwiches",
     subtitle = "Aggregated across all locations and products",
     x        = "Week Ending Date",
-    y        = "Weekly Sales"
+    y        = "Weekly Quantity"
   ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -96,15 +99,15 @@ autoplot(weekly_top, total_sales) +
 
 Fit weekly models for the entire hierarchy
 ```{r}
-# Fit models on top-level weekly total sales
+# Fit models on top-level weekly total quantity
 fit_top <- weekly_top %>%
   model(
-    ARIMA    = ARIMA(total_sales),
-    ETS      = ETS(total_sales),
-    TSLM     = TSLM(total_sales ~ trend()),
-    Ensemble = (ARIMA(total_sales) +
-                  ETS(total_sales) +
-                  TSLM(total_sales ~ trend())) / 3
+    ARIMA    = ARIMA(total_qty),
+    ETS      = ETS(total_qty),
+    TSLM     = TSLM(total_qty ~ trend()),
+    Ensemble = (ARIMA(total_qty) +
+                  ETS(total_qty) +
+                  TSLM(total_qty ~ trend())) / 3
   )
 report(fit_top %>% select(ARIMA))
 report(fit_top %>% select(ETS))
@@ -118,12 +121,12 @@ Rolling-origin cross-validation on top-level weekly series
 cv_top <- weekly_top %>%
   stretch_tsibble(.init = 3, .step = 1) %>%   # first 3 weeks as initial window
   model(
-    ARIMA    = ARIMA(total_sales),
-    ETS      = ETS(total_sales),
-    TSLM     = TSLM(total_sales ~ trend()),
-    Ensemble = (ARIMA(total_sales) +
-                  ETS(total_sales) +
-                  TSLM(total_sales ~ trend())) / 3
+    ARIMA    = ARIMA(total_qty),
+    ETS      = ETS(total_qty),
+    TSLM     = TSLM(total_qty ~ trend()),
+    Ensemble = (ARIMA(total_qty) +
+                  ETS(total_qty) +
+                  TSLM(total_qty ~ trend())) / 3
   ) %>%
   forecast(h = 1)                             # always forecast 1 week ahead
 
@@ -149,10 +152,10 @@ Corrected fit_top
 ```{r}
 fit_top <- weekly_top %>%
   model(
-    ARIMA = ARIMA(total_sales),
-    TSLM  = TSLM(total_sales ~ trend()),
-    Ensemble = (ARIMA(total_sales) +
-                  TSLM(total_sales ~ trend())) / 2
+    ARIMA = ARIMA(total_qty),
+    TSLM  = TSLM(total_qty ~ trend()),
+    Ensemble = (ARIMA(total_qty) +
+                  TSLM(total_qty ~ trend())) / 2
   )
 
 ```
@@ -168,13 +171,13 @@ fc_top <- fit_top %>%
 
 Plot the operational forecast
 ```{r}
-autoplot(weekly_top, total_sales) +
+autoplot(weekly_top, total_qty) +
   autolayer(fc_top, level = NULL) +
   labs(
     title    = "Operational Weekly Forecast for Ice Cream Sandwich Sales",
     subtitle = "Using ARIMA, TSLM, and Ensemble models",
     x        = "Week Ending Date",
-    y        = "Weekly Sales"
+    y        = "Weekly Quantity"
   ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
