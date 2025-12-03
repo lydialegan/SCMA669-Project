@@ -70,6 +70,29 @@ autoplot(weekly_ts, weekly_sales) +
 
 names(final_fc)
 
+
+#Fit ARIMA(0,1,0) on weekly data
+fit_weekly_arima <- weekly_ts %>%
+  model(
+    ARIMA = ARIMA(weekly_sales ~ pdq(0, 1, 0))
+  )
+
+#Get fitted values
+weekly_fitted <- fitted(fit_weekly_arima)
+
+#Plot actual vs fitted
+weekly_ts %>%
+  autoplot(weekly_sales) +
+  autolayer(weekly_fitted, .fitted, color = "red") +
+  labs(
+    title    = "Weekly ARIMA(0,1,0) Model Fit",
+    subtitle = "Fitted values overlaid on actual weekly sales",
+    x        = "Week Ending",
+    y        = "Weekly Sales"
+  )
+
+report(fit_weekly_arima)
+
 #bottoms-up weekly forecast from daily ARIMA
 daily_fc_weekly <- final_fc %>%
   index_by(week = yearweek(SALES_DATE)) %>%
@@ -165,3 +188,72 @@ autoplot(daily_ts, total_sales) +
     color = "Model"
   ) +
   theme_minimal()
+
+
+
+#stl decomposition of weekly sales
+weekly_stl <- weekly_ts %>%
+  model(
+    STL(weekly_sales ~ trend(window = 3) + season(window = "periodic"))
+  )
+
+weekly_components <- components(weekly_stl)
+
+autoplot(weekly_components) +
+  labs(
+    title = "STL Decomposition of Weekly Sales",
+    subtitle = "Trend and seasonality are not stable with only 5 data points",
+    x = "Week Ending",
+    y = "Sales"
+  )
+
+
+
+#train/validation split: first 4 weeks train, last week test
+weekly_train <- weekly_ts %>% slice_head(n=4)
+weekly_test <- weekly_ts %>% slice_tail(n=1)
+
+# Fit ARIMA(0,1,0) on training weeks
+fit_weekly_train <- weekly_train %>%
+  model(
+    ARIMA(weekly_sales ~ pdq(0, 1, 0))
+  )
+
+# Forecast 1 week ahead (Week 5)
+fc_week5 <- fit_weekly_train %>%
+  forecast(h = 1)
+
+# Accuracy of the Week 5 forecast
+weekly_accuracy <- accuracy(fc_week5, weekly_test)
+weekly_accuracy
+
+fc_week5 %>%
+  autoplot(weekly_ts) +
+  labs(
+    title = "Weekly Forecast vs Actual (Week 5)",
+    subtitle = "ARIMA(0,1,0) trained on Weeks 1–4",
+    x = "Week Ending",
+    y = "Weekly Sales"
+  )
+
+
+# Fit ARIMA(0,1,0) on full weekly series
+fit_weekly_full <- weekly_ts %>%
+  model(
+    ARIMA(weekly_sales ~ pdq(0, 1, 0))
+  )
+
+# 4-week operational forecast
+weekly_fc_final <- fit_weekly_full %>%
+  forecast(h = 4)
+
+# Final weekly forecast plot
+weekly_fc_final %>%
+  autoplot(weekly_ts) +
+  labs(
+    title = "Weekly ARIMA(0,1,0) Forecast",
+    subtitle = "4-week operational forecast with 80% and 95% intervals",
+    x = "Week Ending",
+    y = "Weekly Sales"
+  )
+
