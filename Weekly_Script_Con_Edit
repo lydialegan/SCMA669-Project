@@ -1,184 +1,194 @@
-#THE FOLLOWING WAS CREATED AS AN R-NOTEBOOK --------JUST FYI
-
-
-
-
-
----
-title: "Final project R Code"
-output: html_notebook
----
-
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
-
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
-
-```{r}
 library(fpp3)
-```
+library(dplyr)
+library(tidyr)
 
-
-
-reading weekly datasets
-```{r}
-
-target_week_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10112025_KW.txt", header = TRUE, sep = "\t")
-target_week_2_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10182025_KW.txt", header = TRUE, sep = "\t")
+# ---------------------------
+# 1. Load weekly data
+# ---------------------------
+target_week_1   <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10112025_KW.txt",   header = TRUE, sep = "\t")
+target_week_2_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10182025_KW.txt",   header = TRUE, sep = "\t")
 target_week_2_2 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10182025_KW 2.txt", header = TRUE, sep = "\t")
-target_week_3_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10252025_KW.txt", header = TRUE, sep = "\t")
+target_week_3_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10252025_KW.txt",   header = TRUE, sep = "\t")
 target_week_3_2 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_10252025_KW 2.txt", header = TRUE, sep = "\t")
-target_week_4_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11012025_KW.txt", header = TRUE, sep = "\t")
+target_week_4_1 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11012025_KW.txt",   header = TRUE, sep = "\t")
 target_week_4_2 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11012025_KW 2.txt", header = TRUE, sep = "\t")
 target_week_4_3 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11012025_KW 3.txt", header = TRUE, sep = "\t")
-target_week_5 <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11082025_KW.txt", header = TRUE, sep = "\t")
-```
+target_week_5   <- read.table("C:/Users/poole/Downloads/Target Sales BPD/BV_157656_WEEKLY_SALES_TCIN_LOC_11082025_KW.txt",   header = TRUE, sep = "\t")
 
-```{r}
-View(target_week)
-```
-
-concatenating weekly dataframes
-```{r}
+#Concatenate weekly dataframes
 All_weeks <- rbind(
-  target_week_1, target_week_2_1, target_week_2_2, target_week_3_1, target_week_3_2,
-  target_week_4_1, target_week_4_2, target_week_4_3, target_week_5
+  target_week_1, target_week_2_1, target_week_2_2, target_week_3_1, target_week_3_2, target_week_4_1, target_week_4_2, target_week_4_3, target_week_5
 )
-```
 
-
-Collapse duplicates at (LOCATION_ID, TCIN, SALES_DATE)
-```{r}
-weekly_base <- All_weeks %>%
+#aggregate to our forecasting series: total weekly sales
+weekly_total <- All_weeks %>%
   mutate(SALES_DATE = as.Date(SALES_DATE)) %>%
-  group_by(LOCATION_ID, TCIN, SALES_DATE) %>%
+  group_by(SALES_DATE) %>%
   summarise(
-    total_qty = sum(SALE_QUANTITY, na.rm = TRUE),
+    weekly_sales = sum(SALE_AMOUNT, na.rm = TRUE),
     .groups = "drop"
   )
 
-  
-```
+#Shorten names
+flavor_mix_clean <- flavor_mix %>%
+  mutate(Flavor = case_when(
+    grepl("Brookie Dough", ITEM_DESCRIPTION) ~ "Brookie Dough",
+    grepl("Cookie Monster", ITEM_DESCRIPTION) ~ "Cookie Monster",
+    grepl("Strawberry Shortcake", ITEM_DESCRIPTION) ~ "Strawberry Shortcake",
+    grepl("Classic", ITEM_DESCRIPTION) ~ "Classic",
+    grepl("Chocolate Blackout", ITEM_DESCRIPTION) ~ "Chocolate Blackout",
+    TRUE ~ ITEM_DESCRIPTION
+  ))
 
-Weekly tsibble at the bottom level
-```{r}
-weekly_ts <- weekly_base %>%
+weekly_flavor_ts <- All_weeks %>%
+  mutate(SALES_DATE = as.Date(SALES_DATE)) %>%
+  group_by(SALES_DATE, ITEM_DESCRIPTION) %>%
+  summarise(
+    weekly_sales = sum(SALE_AMOUNT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
   as_tsibble(
-    key   = c(LOCATION_ID, TCIN),
+    key   = ITEM_DESCRIPTION,
     index = SALES_DATE
   )
-```
 
 
-Hierarchical aggregation: Total -> Location -> (Location, TCIN)
-```{r}
-weekly_hts <- weekly_ts %>%
-  aggregate_key(
-    LOCATION_ID / TCIN,
-    total_qty = sum(total_qty, na.rm = TRUE)
-  )
-```
 
-
-Top-level series for plotting / storytelling
-```{r}
-weekly_top <- weekly_hts %>%
-  filter(is_aggregated(LOCATION_ID), is_aggregated(TCIN))
-
-autoplot(weekly_top, total_qty) +
+#quick visualization of weekly sales
+autoplot(weekly_flavor_ts, weekly_sales) +
   geom_point(size = 2) +
   labs(
-    title    = "Weekly Total Quantity for Target Ice Cream Sandwiches",
-    subtitle = "Aggregated across all locations and products",
+    title    = "Weekly Total Sales for Target Ice Cream Sandwiches",
+    subtitle = "Aggregated across all locations (5 weekly observations)",
     x        = "Week Ending Date",
-    y        = "Weekly Quantity"
+    y        = "Weekly Sales"
   ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
 
 
-Fit weekly models for the entire hierarchy
-```{r}
-# Fit models on top-level weekly total quantity
-fit_top <- weekly_top %>%
+
+# ARIMA model(0,1,0): total weekly sales
+weekly_fit_arima <- weekly_flavor_ts %>%
   model(
-    ARIMA    = ARIMA(total_qty),
-    ETS      = ETS(total_qty),
-    TSLM     = TSLM(total_qty ~ trend()),
-    Ensemble = (ARIMA(total_qty) +
-                  ETS(total_qty) +
-                  TSLM(total_qty ~ trend())) / 3
-  )
-report(fit_top %>% select(ARIMA))
-report(fit_top %>% select(ETS))
-report(fit_top %>% select(TSLM))
-
-```
-
-
-Rolling-origin cross-validation on top-level weekly series
-```{r}
-cv_top <- weekly_top %>%
-  stretch_tsibble(.init = 3, .step = 1) %>%   # first 3 weeks as initial window
-  model(
-    ARIMA    = ARIMA(total_qty),
-    ETS      = ETS(total_qty),
-    TSLM     = TSLM(total_qty ~ trend()),
-    Ensemble = (ARIMA(total_qty) +
-                  ETS(total_qty) +
-                  TSLM(total_qty ~ trend())) / 3
-  ) %>%
-  forecast(h = 1)                             # always forecast 1 week ahead
-
-```
-
-
-
-Compute CV accuracy metrics
-```{r}
-cv_results <- cv_top %>%
-  accuracy(weekly_top) %>%
-  group_by(.model) %>%
-  summarise(
-    RMSE = mean(RMSE, na.rm = TRUE),
-    MAPE = mean(MAPE, na.rm = TRUE)
+    ARIMA = ARIMA(weekly_sales ~ pdq(0,1,0))
   )
 
-cv_results
-```
-
-
-Corrected fit_top
-```{r}
-fit_top <- weekly_top %>%
-  model(
-    ARIMA = ARIMA(total_qty),
-    TSLM  = TSLM(total_qty ~ trend()),
-    Ensemble = (ARIMA(total_qty) +
-                  TSLM(total_qty ~ trend())) / 2
-  )
-
-```
-
-
-
-Final operational weekly forecast (next 4 weeks)
-```{r}
-fc_top <- fit_top %>%
+weekly_fc_arima <- weekly_fit_arima %>%
   forecast(h = 4)
-```
 
-
-Plot the operational forecast
-```{r}
-autoplot(weekly_top, total_qty) +
-  autolayer(fc_top, level = NULL) +
+#plot ARIMA model(0,1,0): total weekly sales by flavor
+autoplot(weekly_flavor_ts, weekly_sales) +
+  autolayer(weekly_fc_arima, level = c(80, 95)) +
   labs(
-    title    = "Operational Weekly Forecast for Ice Cream Sandwich Sales",
-    subtitle = "Using ARIMA, TSLM, and Ensemble models",
+    title    = "Weekly ARIMA(0,1,0) Forecast",
+    subtitle = "Top-level forecast of weekly sales",
     x        = "Week Ending Date",
-    y        = "Weekly Quantity"
+    y        = "Weekly Sales"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_cartesian(ylim = c(0, 60000))
+
+#---------------------------
+# 5. Manual ETS on total weekly series (your teammate’s models)
+#---------------------------
+ets_manual_1_weekly <- weekly_flavor_ts %>%
+  model(ETS(weekly_sales ~ error("A") + trend("N") + season("N")))
+report(ets_manual_1_weekly)  # ANN
+
+ets_manual_2_weekly <- weekly_flavor_ts %>%
+  model(ETS(weekly_sales ~ error("M") + trend("N") + season("N")))
+report(ets_manual_2_weekly)  # MNN
+
+data_ets <- weekly_flavor_ts
+
+
+
+#---------------------------
+# Product-level weekly series (bottom level)
+# ---------------------------
+weekly_by_item <- All_weeks %>%
+  mutate(SALES_DATE = as.Date(SALES_DATE)) %>%
+  group_by(SALES_DATE, ITEM_DESCRIPTION) %>%            # 1) aggregate first
+  summarise(
+    weekly_sales = sum(SALE_AMOUNT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  as_tsibble(                                           # 2) now safe to tsibble
+    key   = ITEM_DESCRIPTION,
+    index = SALES_DATE
+  )
+
+# ---------------------------
+# Hierarchical tsibble by ITEM_DESCRIPTION
+# (Total + each individual product)
+# ---------------------------
+weekly_hts <- weekly_by_item %>%
+  aggregate_key(
+    ITEM_DESCRIPTION,                                   # 3) creates "all items" + each ITEM_DESCRIPTION
+    weekly_sales = sum(weekly_sales)
+  )
+#---------------------------
+# 7. Fit models to each series in the hierarchy
+#    (each ITEM_DESCRIPTION + the aggregated Total)
+#---------------------------
+fit_hts <- weekly_hts %>%
+  model(
+    ARIMA_manual = ARIMA(weekly_sales ~ pdq(0,1,0)),
+    ETS_ANN      = ETS(weekly_sales ~ error("A") + trend("N") + season("N"))
+  )
+
+# Reconciled hierarchical forecasts using bottom-up ARIMA
+fc_hts <- fit_hts %>%
+  reconcile(
+    bu = bottom_up(ARIMA_manual)
+  ) %>%
+  forecast(h = 4)
+
+#---------------------------
+# 8. Plot: top-level reconciled forecast (hierarchical Total)
+#---------------------------
+fc_total_hts <- fc_hts %>%
+  filter(.model == "bu", is_aggregated(ITEM_DESCRIPTION))
+
+autoplot(
+  weekly_hts %>% filter(is_aggregated(ITEM_DESCRIPTION)),
+  weekly_sales
+) +
+  autolayer(fc_total_hts, level = c(80, 95)) +
+  labs(
+    title    = "Hierarchical Forecast: Total Weekly Sales",
+    subtitle = "Bottom-up ARIMA(0,1,0) reconciled across ITEM_DESCRIPTION",
+    x        = "Week Ending Date",
+    y        = "Weekly Sales"
   ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
+
+#---------------------------
+# 9. Plot: sample ITEM_DESCRIPTION series + forecasts
+#---------------------------
+example_items <- weekly_hts %>%
+  filter(!is_aggregated(ITEM_DESCRIPTION)) %>%
+  distinct(ITEM_DESCRIPTION) %>%
+  slice_head(n = 3) %>%
+  pull(ITEM_DESCRIPTION)
+
+fc_items <- fc_hts %>%
+  filter(.model == "bu", ITEM_DESCRIPTION %in% example_items)
+
+autoplot(
+  weekly_hts %>% filter(ITEM_DESCRIPTION %in% example_items),
+  weekly_sales
+) +
+  autolayer(fc_items, level = NULL) +
+  labs(
+    title    = "Hierarchical Forecasts by Product",
+    subtitle = "Sample ITEM_DESCRIPTION series with bottom-up reconciled ARIMA(0,1,0)",
+    x        = "Week Ending Date",
+    y        = "Weekly Sales"
+  ) +
+  facet_wrap(~ ITEM_DESCRIPTION, scales = "free_y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
