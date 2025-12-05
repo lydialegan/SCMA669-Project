@@ -218,4 +218,31 @@ ggplot(weekly_items_fc_clean_tbl,
 #each flavor because the extremely short series did not support reliable 
 #estimation of more complex or custom ETS structures. These item-level ETS 
 #forecasts were then reconciled using a bottom-up hierarchy to produce coherent 
+
 #forecasts for both flavor-level and total weekly sales.
+
+
+
+#--------USED THE FOLLOWING CODE TO DISTINGUISH FLAVORS WITHIN WEEKLY MODEL GRAPHICS FOR COMPARISON ANALYSIS--------
+
+# Weekly sales by flavor (ITEM_DESCRIPTION) across all locations
+weekly_flavor_ts <- All_weeks %>%
+  mutate(
+    SALES_DATE = as.Date(SALES_DATE),
+    Flavor = case_when(
+      grepl("Brookie Dough", ITEM_DESCRIPTION) ~ "Brookie Dough",
+      grepl("Cookie Monster", ITEM_DESCRIPTION) ~ "Cookie Monster",
+      grepl("Strawberry Shortcake", ITEM_DESCRIPTION) ~ "Strawberry Shortcake",
+      grepl("Classic", ITEM_DESCRIPTION) ~ "Classic",
+      grepl("Chocolate Blackout", ITEM_DESCRIPTION) ~ "Chocolate Blackout",
+      TRUE ~ ITEM_DESCRIPTION
+    )) %>%
+  group_by(SALES_DATE, Flavor) %>%
+  summarise(
+    weekly_sales = sum(SALE_AMOUNT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  as_tsibble(
+    key   = Flavor,
+    index = SALES_DATE
+  )
